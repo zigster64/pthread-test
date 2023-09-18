@@ -59,11 +59,11 @@ pub fn main() !void {
             Mode.detach => {
                 const t = try std.Thread.spawn(.{}, thread_function, .{ thread_id, mode });
                 t.detach();
-                std.time.sleep(std.time.ns_per_ms * 10);
+                std.time.sleep(std.time.ns_per_ms);
             },
             Mode.pool => {
                 try thread_pool.spawn(thread_function, .{ thread_id, mode });
-                std.time.sleep(std.time.ns_per_ms * 10);
+                std.time.sleep(std.time.ns_per_ms);
             },
         }
     }
