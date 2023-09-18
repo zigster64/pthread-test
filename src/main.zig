@@ -3,6 +3,7 @@ const std = @import("std");
 const Mode = enum {
     join,
     detach,
+    waitgroup,
     pool,
 };
 
@@ -33,6 +34,10 @@ pub fn main() !void {
             mode = Mode.detach;
             std.debug.print("Thread detached mode\n", .{});
         }
+        if (std.mem.eql(u8, args[1], "-w")) {
+            mode = Mode.waitgroup;
+            std.debug.print("Thread detached mode with waitgroup\n", .{});
+        }
         if (std.mem.eql(u8, args[1], "-p")) {
             mode = Mode.pool;
             if (args.len > 2) {
@@ -56,18 +61,44 @@ pub fn main() !void {
             Mode.join => {
                 // wait for the thread to exit, and the ruasge remains constant over time
                 // after join, can immediately spawn the next thread
-                const t = try std.Thread.spawn(.{}, thread_function, .{ thread_id, mode });
+                const t = std.Thread.spawn(.{}, thread_function, .{ thread_id, mode }) catch |err| {
+                    std.debug.print("Join Spawn {}\n", .{err});
+                    std.time.sleep(std.time.ns_per_min);
+                    return err;
+                };
                 t.join();
             },
-            Mode.detach => {
+            Mode.waitgroup => {
                 wg.start();
-                const t = try std.Thread.spawn(.{}, thread_detach_function, .{ thread_id, &wg });
+                const t = std.Thread.spawn(.{}, thread_waitgroup_function, .{ thread_id, &wg }) catch |err| {
+                    std.debug.print("Wait Spawn {}\n", .{err});
+                    std.time.sleep(std.time.ns_per_min);
+                    return err;
+                };
                 t.detach();
                 wg.wait();
                 wg.reset();
             },
+            Mode.detach => {
+                const t = std.Thread.spawn(.{}, thread_function, .{ thread_id, mode }) catch |err| {
+                    std.debug.print("Detach Spawn {}\n", .{err});
+                    std.time.sleep(std.time.ns_per_min);
+                    return err;
+                };
+                t.detach();
+                std.time.sleep(std.time.ns_per_ms);
+                if (thread_id % 5_000 == 0) {
+                    std.debug.print("Catch breath ...\n", .{});
+                    std.time.sleep(std.time.ns_per_s * 3);
+                }
+            },
             Mode.pool => {
-                try thread_pool.spawn(thread_function, .{ thread_id, mode });
+                thread_pool.spawn(thread_function, .{ thread_id, mode }) catch |err| {
+                    std.debug.print("Pool Spawn {}\n", .{err});
+                    std.time.sleep(std.time.ns_per_min);
+                    return err;
+                };
+                std.time.sleep(std.time.ns_per_ms);
             },
         }
     }
@@ -76,10 +107,12 @@ pub fn main() !void {
 fn thread_function(id: usize, mode: Mode) void {
     const r = std.os.getrusage(0);
     std.debug.print("Spawn a new thread {} mode {s} maxrss = {}\n", .{ id, @tagName(mode), r.maxrss });
+    std.time.sleep(std.time.ns_per_ms);
 }
 
-fn thread_detach_function(id: usize, wg: *std.Thread.WaitGroup) void {
+fn thread_waitgroup_function(id: usize, wg: *std.Thread.WaitGroup) void {
     const r = std.os.getrusage(0);
-    std.debug.print("Spawn a new thread {} mode Detach maxrss = {}\n", .{ id, r.maxrss });
+    std.debug.print("Spawn a new thread {} mode Waitgroup maxrss = {}\n", .{ id, r.maxrss });
+    std.time.sleep(std.time.ns_per_ms);
     wg.finish();
 }
