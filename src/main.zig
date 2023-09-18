@@ -10,12 +10,12 @@ pub fn main() !void {
     var mode: Mode = Mode.join;
 
     var thread_count: u32 = 16;
-    var thread_id: usize = 0;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
     // parse cmdline args
     const args = try std.process.argsAlloc(allocator);
+    errdefer std.process.argsFree(allocator, args);
 
     // create a thread pool if we need it for pool mode
     var thread_pool: std.Thread.Pool = undefined;
@@ -46,6 +46,9 @@ pub fn main() !void {
     }
     std.process.argsFree(allocator, args);
 
+    var wg: std.Thread.WaitGroup = .{};
+    var thread_id: usize = 0;
+
     while (true) {
         thread_id += 1;
 
@@ -57,13 +60,14 @@ pub fn main() !void {
                 t.join();
             },
             Mode.detach => {
-                const t = try std.Thread.spawn(.{}, thread_function, .{ thread_id, mode });
+                wg.start();
+                const t = try std.Thread.spawn(.{}, thread_detach_function, .{ thread_id, &wg });
                 t.detach();
-                std.time.sleep(std.time.ns_per_ms);
+                wg.wait();
+                wg.reset();
             },
             Mode.pool => {
                 try thread_pool.spawn(thread_function, .{ thread_id, mode });
-                std.time.sleep(std.time.ns_per_ms);
             },
         }
     }
@@ -72,4 +76,10 @@ pub fn main() !void {
 fn thread_function(id: usize, mode: Mode) void {
     const r = std.os.getrusage(0);
     std.debug.print("Spawn a new thread {} mode {s} maxrss = {}\n", .{ id, @tagName(mode), r.maxrss });
+}
+
+fn thread_detach_function(id: usize, wg: *std.Thread.WaitGroup) void {
+    const r = std.os.getrusage(0);
+    std.debug.print("Spawn a new thread {} mode Detach maxrss = {}\n", .{ id, r.maxrss });
+    wg.finish();
 }
